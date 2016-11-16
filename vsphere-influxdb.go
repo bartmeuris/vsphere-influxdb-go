@@ -81,6 +81,7 @@ type MetricDef struct {
 // Metrics description in config
 var vm_refs []types.ManagedObjectReference
 var debug bool
+var interval int
 
 type Metric struct {
 	ObjectType []string
@@ -411,7 +412,6 @@ func (vcenter *VCenter) Query(config Configuration, InfluxDBClient influxclient.
 		}
 		queries = append(queries, types.PerfQuerySpec{Entity: mor, StartTime: &startTime, EndTime: &endTime, MetricId: metricIds, IntervalId: intervalId})
 	}
-
 	// Query the performances
 	perfreq := types.QueryPerf{This: *client.ServiceContent.PerfManager, QuerySpec: queries}
 	perfres, err := methods.QueryPerf(ctx, client.RoundTripper, &perfreq)
@@ -432,7 +432,6 @@ func (vcenter *VCenter) Query(config Configuration, InfluxDBClient influxclient.
 	if err != nil {
 		errlog.Println(err)
 	}
-
 	for _, base := range perfres.Returnval {
 		pem := base.(*types.PerfEntityMetric)
 		entityName := strings.ToLower(pem.Entity.Type)
@@ -612,6 +611,7 @@ func queryVCenter(vcenter VCenter, config Configuration, InfluxDBClient influxcl
 
 func main() {
 
+	flag.IntVar(&interval, "interval", 0, "When specified, pull stats every X seconds")
 	flag.BoolVar(&debug, "debug", false, "Debug mode")
 	flag.Parse()
 
@@ -647,7 +647,17 @@ func main() {
 	} else {
 		stdlog.Println("Successfully connected to Influx\n")
 	}
-	for _, vcenter := range config.VCenters {
-		queryVCenter(*vcenter, config, InfluxDBClient)
+	if (interval > 0) {
+		config.Interval = interval
 	}
+	for {
+		for _, vcenter := range config.VCenters {
+			queryVCenter(*vcenter, config, InfluxDBClient)
+		}
+		if (interval <= 0) {
+			break
+		}
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
+	InfluxDBClient.Close()
 }
